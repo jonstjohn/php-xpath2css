@@ -100,13 +100,13 @@ def xpath_replace_variable(search_str, match_str, variable, xpath, quote):
     # Do not replace if variable is used w/i double-quotes
     regex = re.compile('".*\{0}.*"'.format(variable))
     if re.search(regex, search_str):
-        print("  {0} used in variable assignment, skipping")
+        print("  {0} used in variable assignment, skipping".format(variable))
         xpath_skip_count += 1
         return match_str
 
     # Used in string concatenation
     if re.search(r'\.\s?\{0}'.format(variable), search_str) or re.search(r'\{0}\s?\.'.format(variable), search_str):
-        print("  {0} used in concatenation")
+        print("  {0} used in concatenation".format(variable))
         xpath_skip_count += 1
         return match_str
 
