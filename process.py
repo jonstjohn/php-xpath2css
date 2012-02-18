@@ -6,8 +6,6 @@
 import cssify
 import os, re, shutil
 from optparse import OptionParser
-from pwd import getpwnam
-from grp import getgrnam
 
 file_count = 0 # Number of .php files encountered when doing a replace
 replace_count = 0 # Number of xpaths replaces with css
@@ -30,6 +28,7 @@ def xpath_count(path):
 
     # simplified regex - single or double-quote followed by xpath= or //
     regex = r'(\'|")(xpath=|\/\/)'
+
     return len(re.findall(regex, s))
 
 # Replace all occurences of xpaths with css equivalent in file
@@ -63,10 +62,6 @@ def replace_all(path):
     global file_count
     file_count = file_count + 1
 
-    # uid and gid for chown below
-    uid = getpwnam('intserver')[2]
-    gid = getgrnam('integration')[2]
-
     # Read file
     f = open(filepath)
     s = f.read()
@@ -78,22 +73,44 @@ def replace_all(path):
     f.write(s)
     f.close()
 
-    os.chown(backup_filepath, uid, gid)
-
     # someMethod("//some/path"), someMethod('//some/path'), someMethod("//some[contains(@class, \"stuff\")]")
     regex = r'(\w+)\((\'|")((xpath=|\/\/)[^\2\n]+)\2(\)|,)'
-    print "**** COUNT: {0}".format(re.findall(regex, s))
+    print("**** COUNT: {0}".format(len(re.findall(regex, s))))
     s = re.sub(regex, lambda m: xpath_replace_method(m.group(0), m.group(1), m.group(3), m.group(2)), s)
 
     # private properties
     regex = r'\$(_\S+) = (\'|")((xpath=|\/\/)[^\2\n]+)\2;'
     s = re.sub(regex, lambda m: xpath_replace_property(s, m.group(0), m.group(1), m.group(3), m.group(2)), s)
 
+    # Variables - e.g., $xpath = '//table'
+    regex = r'(\$\S+) = (\'|")((xpath=|\/\/)[^\2\n\$]+)\2;'
+    s = re.sub(regex, lambda m: xpath_replace_variable(s, m.group(0), m.group(1), m.group(3), m.group(2)), s)
+
     f = open(filepath, 'w')
     f.write(s)
     f.close()
 
-    os.chown(filepath, uid, gid)
+# Replace xpath in variable
+def xpath_replace_variable(search_str, match_str, variable, xpath, quote):
+
+    global xpath_skip_count
+
+    print("Variable: {0} - {1}".format(variable, xpath))
+
+    # Do not replace if variable is used w/i double-quotes
+    regex = re.compile('".*\{0}.*"'.format(variable))
+    if re.search(regex, search_str):
+        print("  {0} used in variable assignment, skipping")
+        xpath_skip_count += 1
+        return match_str
+
+    # Used in string concatenation
+    if re.search(r'\.\s?\{0}'.format(variable), search_str) or re.search(r'\{0}\s?\.'.format(variable), search_str):
+        print("  {0} used in concatenation")
+        xpath_skip_count += 1
+        return match_str
+
+    return match_str.replace(xpath, xpath_to_css(xpath, quote))
 
 # Replace xpath in property declaration
 def xpath_replace_property(search_str, match_str, property, xpath, quote):
@@ -118,21 +135,26 @@ def xpath_replace_property(search_str, match_str, property, xpath, quote):
         replaced with the css expressions, if possible.
     """
 
+    global xpath_skip_count
+
     print("Private property: {0} - {1}".format(property, xpath))
 
     # Used in file using concatenation
     regex = re.compile("['|\"] . \$this->{0} . ['|\"]".format(property))
     if len(re.findall(regex, search_str)) > 0:
+        xpath_skip_count += 1
         return match_str
 
     # Used in file inside double-quotes
     regex = re.compile('".*\$this->{0}.*"'.format(property))
     if len(re.findall(regex, search_str)) > 0:
+        xpath_skip_count += 1
         return match_str
 
     # Assigned to another variable
     regex = re.compile('\$\S+ = \$this->{0};'.format(property))
     if len(re.findall(regex, search_str)) > 0:
+        xpath_skip_count += 1
         return match_str
 
     return match_str.replace(xpath, xpath_to_css(xpath, quote))
@@ -156,9 +178,13 @@ def xpath_replace_method(match_str, method, xpath, quote):
         The original match_str or the match_str with the xpath expression
         replaced with the css expressions, if possible.
     """
+
+    global xpath_skip_count
+
     # No replacement if getXpathCount or xpath contains a variable
     if method == 'getXpathCount' or (quote == '"' and xpath.find('$') != -1):
 
+        xpath_skip_count += 1
         return match_str
 
     else:
@@ -185,14 +211,14 @@ def xpath_to_css(xpath, quote):
 
         css = css.replace(quote, "\\{0}".format(quote)) # escape quote
         global replace_count
-        replace_count = replace_count + 1
+        replace_count += 1
 
         return "css={0}".format(css)
 
     except cssify.XpathException:
         print("Unable to convert xpath '{0}' to css expression".format(xpath))
         global xpath_skip_count
-        xpath_skip_count = xpath_skip_count + 1
+        xpath_skip_count += 1
         return xpath
 
     
@@ -277,11 +303,13 @@ if __name__ == "__main__":
     # Decide what method to run based on arguments
     if options.restore:
         restore(path)
-    elif options.count:
-        cnt = xpath_count(path)
-        print("Found {0} xpaths".format(cnt))
     else:
-        replace_all(path)
-        print("File count: {0}".format(file_count))
-        print("Replace count: {0}".format(replace_count))
-        print("Xpath skip count: {0}".format(xpath_skip_count))
+        xpath_count = xpath_count(path)
+        if options.count:
+            print("Found {0} xpaths".format(xpath_count))
+        if not options.count:
+            replace_all(path)
+            print("Xpath count: {0}".format(xpath_count))
+            print("File count: {0}".format(file_count))
+            print("Replace count: {0}".format(replace_count))
+            print("Xpath skip count: {0}".format(xpath_skip_count))

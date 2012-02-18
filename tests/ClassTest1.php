@@ -6,7 +6,7 @@ class TestClass1
     private $_xpath1 = '//a/table';
 
     // Double quotes
-    private $_xpath2 = "css=a.test";
+    private $_xpath2 = "//a[@class='test']";
 
     // Test xpaths inside a method
     public function someMethod()
@@ -17,15 +17,24 @@ class TestClass1
 
         $this->getXpathCount($xpathTmp);
 
-        $this->click->('css=input a');
+        $this->click->('//input//a');
 
         $this->type("//div//$xpathTmp");
 
-        $this->click->("css=div.test");
+        $this->click->("//div[@class='test']");
 
         $this->select->('xpath=\'//div\'');
 
         $this->select->("xpath=//span");
+
+        $xpathAssignment = '//div/table';
+        $var = "//div$xpathAssignment";
+
+        $xpathAssignment2 = '//div/table';
+        $var = $xpathAssignment2 . '//div';
+
+        $xpathAssignment3 = '//div/table';
+        $var = '//div' . $xpathAssignment3;
     }
 
 }
