@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
-# Convert a file or directory recursively from xpath expressions to css expressions
-# Limitations: xxx
+"""Convert a file or directory recursively from xpath expressions to css expressions
+"""
 
 import cssify
 import os, re, shutil
@@ -14,23 +14,25 @@ show_verbose = False # display verbose output
 no_backup = False # do not backup files
 
 def xpath_count(path):
-"""Count xpaths in path
+    """Count xpaths in path
 
-Counts the number of xpath expressions found in the directory or file path.
-Scans files recursively for a somewhat simplistic xpath match, either the string
-xpath= or single/double quote followed by two forward slashes.
+    Counts the number of xpath expressions found in the directory or file path.
+    Scans files recursively for a somewhat simplistic xpath match, either the string
+    xpath= or single/double quote followed by two forward slashes.
 
-Args:
-    path: File or directory path
-Returns:
+    Args:
+        path: File or directory path
+    Returns:
     The number of xpath expressions found recursively in the path
-"""
+    """
     count = 0
     if os.path.isdir(path):
         for path, dirs, files in os.walk(os.path.abspath(path)):
+            dirs[:] = [d for d in dirs if d[0:1] != '.']
+            files[:] = [f for f in files if f[0:1] != '.']
             for filename in files:
-                filepath = os.path.join(path, filename)
-                count = count + xpath_count(filepath)
+                    filepath = os.path.join(path, filename)
+                    count = count + xpath_count(filepath)
         return count
 
     f = open(path)
@@ -43,16 +45,16 @@ Returns:
     return len(re.findall(regex, s))
 
 def replace_all(path):
-"""Replace all xpaths in path with css expression
+    """Replace all xpaths in path with css expression
 
-The method is conservative and does not replace any of the following:
-  - xpath expressions inside getXpathCount()
-  - xpath expressions that are assign to variables later referenced in the same file
-  - xpath expressions that contain variables ($)
+    The method is conservative and does not replace any of the following:
+      - xpath expressions inside getXpathCount()
+      - xpath expressions that are assign to variables later referenced in the same file
+      - xpath expressions that contain variables ($)
 
-Args:
-    path: File or directory path
-"""
+    Args:
+        path: File or directory path
+    """
     verbose("*** {0} ***".format(path))
 
     # If this is a directory, look for files/directories w/i it
@@ -60,9 +62,14 @@ Args:
 
         verbose("  processing directory")
         for path, dirs, files in os.walk(os.path.abspath(path)):
+            dirs[:] = [d for d in dirs if d[0:1] != '.']
+            files[:] = [f for f in files if f[0:1] != '.']
             for filename in files:
-                filepath = os.path.join(path, filename)
-                replace_all(filepath)
+                print("  ---> {0}".format(filename))
+                print("  ---> {0}".format(path))
+                if filename[0:1] != '.':
+                    filepath = os.path.join(path, filename)
+                    replace_all(filepath)
         
         return
 
@@ -223,7 +230,7 @@ def xpath_replace_method(match_str, method, xpath, quote):
 
     else:
 
-        return "{0}->({1}{2}{3})".format(method, quote, xpath_to_css(xpath, quote), quote)
+        return match_str.replace(xpath, xpath_to_css(xpath, quote))
 
 
 def xpath_to_css(xpath, quote):
@@ -271,9 +278,11 @@ def restore(path):
 
         verbose("  processing directory")
         for path, dirs, files in os.walk(os.path.abspath(path)):
+            dirs[:] = [d for d in dirs if d[0:1] != '.']
+            files[:] = [f for f in files if f[0:1] != '.']
             for filename in files:
-                filepath = os.path.join(path, filename)
-                restore(filepath)
+                    filepath = os.path.join(path, filename)
+                    restore(filepath)
 
         return
 
