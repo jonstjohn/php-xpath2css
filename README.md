@@ -6,18 +6,13 @@ The module can be executed with a file or directory path as a single argument, a
 
 # Usage
 
-``
-process.py [options] filepath
-``
+    process.py [options] filepath
 
 By default, process.py recursively replaces xpath expressions with css in the filepath, which may be a file or directory.
 
 The following additional options may be used:
-``
--r revert files after running process (restores .bak files)
--c display count of xpaths only
--v show verbose output
--t run tests
-``
 
-
+    -r revert files after running process (restores .bak files)
+    -c display count of xpaths only
+    -v show verbose output
+    -t run tests
