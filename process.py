@@ -10,10 +10,21 @@ from optparse import OptionParser
 file_count = 0 # Number of .php files encountered when doing a replace
 replace_count = 0 # Number of xpaths replaces with css
 xpath_skip_count = 0 # Number of xpaths skipped b/c it couldn't be processed or other reason
+show_verbose = False # display verbose output
+no_backup = False # do not backup files
 
-# Count xpaths
 def xpath_count(path):
-   
+"""Count xpaths in path
+
+Counts the number of xpath expressions found in the directory or file path.
+Scans files recursively for a somewhat simplistic xpath match, either the string
+xpath= or single/double quote followed by two forward slashes.
+
+Args:
+    path: File or directory path
+Returns:
+    The number of xpath expressions found recursively in the path
+"""
     count = 0
     if os.path.isdir(path):
         for path, dirs, files in os.walk(os.path.abspath(path)):
@@ -31,19 +42,23 @@ def xpath_count(path):
 
     return len(re.findall(regex, s))
 
-# Replace all occurences of xpaths with css equivalent in file
-# This method is conservative.  It does not replace the following:
-#     - xpath locators inside getXpathCount()
-#     - xpath locators that are assigned to variables
-#     - xpath locators that contain variables ($)
 def replace_all(path):
+"""Replace all xpaths in path with css expression
 
-    print("*** {0} ***".format(path))
+The method is conservative and does not replace any of the following:
+  - xpath expressions inside getXpathCount()
+  - xpath expressions that are assign to variables later referenced in the same file
+  - xpath expressions that contain variables ($)
+
+Args:
+    path: File or directory path
+"""
+    verbose("*** {0} ***".format(path))
 
     # If this is a directory, look for files/directories w/i it
     if os.path.isdir(path):
 
-        print("  processing directory")
+        verbose("  processing directory")
         for path, dirs, files in os.walk(os.path.abspath(path)):
             for filename in files:
                 filepath = os.path.join(path, filename)
@@ -56,7 +71,7 @@ def replace_all(path):
 
     # Reject non-PHP files
     if filepath[-4:] != '.php':
-        print("  skipping '{0}' - not PHP file".format(filepath))
+        verbose("  skipping '{0}' - not PHP file".format(filepath))
         return 
 
     global file_count
@@ -68,14 +83,15 @@ def replace_all(path):
     f.close()
 
     # Write to backup file
-    backup_filepath = "{0}.bak".format(filepath)
-    f = open(backup_filepath, 'w')
-    f.write(s)
-    f.close()
+    if not no_backup:
+        backup_filepath = "{0}.bak".format(filepath)
+        f = open(backup_filepath, 'w')
+        f.write(s)
+        f.close()
 
     # someMethod("//some/path"), someMethod('//some/path'), someMethod("//some[contains(@class, \"stuff\")]")
     regex = r'(\w+)\((\'|")((xpath=|\/\/)[^\2\n]+)\2(\)|,)'
-    print("**** COUNT: {0}".format(len(re.findall(regex, s))))
+    verbose("**** COUNT: {0}".format(len(re.findall(regex, s))))
     s = re.sub(regex, lambda m: xpath_replace_method(m.group(0), m.group(1), m.group(3), m.group(2)), s)
 
     # private properties
@@ -92,21 +108,39 @@ def replace_all(path):
 
 # Replace xpath in variable
 def xpath_replace_variable(search_str, match_str, variable, xpath, quote):
+    """Replace xpath with css for variable
 
+    Replaces an xpath with css for expression in variable assignment (e.g.,
+    $xpath = '//div'). Does not convert xpaths for the following conditions:
+    - Variable is used in same file inside double-quotes
+    - Variable is used in concatenation
+    This method is intended to be a callback from re.sub()
+
+    Args:
+        search_str: The original string that was searched
+        match_str: The entire string that was matched
+        variable: The variable that xpath is assigned to, including $ sign
+        xpath: Xpath expression
+        quote: The type of quoting used ' or "
+
+    Returns:
+       The original match_str or the match_str with the xpath expression
+       replaced with the css expression, if possible
+    """
     global xpath_skip_count
 
-    print("Variable: {0} - {1}".format(variable, xpath))
+    verbose("Variable: {0} - {1}".format(variable, xpath))
 
     # Do not replace if variable is used w/i double-quotes
     regex = re.compile('".*\{0}.*"'.format(variable))
     if re.search(regex, search_str):
-        print("  {0} used in variable assignment, skipping".format(variable))
+        verbose("  {0} used in variable assignment, skipping".format(variable))
         xpath_skip_count += 1
         return match_str
 
     # Used in string concatenation
     if re.search(r'\.\s?\{0}'.format(variable), search_str) or re.search(r'\{0}\s?\.'.format(variable), search_str):
-        print("  {0} used in concatenation".format(variable))
+        verbose("  {0} used in concatenation".format(variable))
         xpath_skip_count += 1
         return match_str
 
@@ -122,7 +156,7 @@ def xpath_replace_property(search_str, match_str, property, xpath, quote):
     - The property is not used inside the search_str inside double-quotes
     - The property is not assigned to another variable
     - The xpath can be converted to a css expression using cssify
-    This method is intented to be a callback from re.sub
+    This method is intended to be a callback from re.sub
 
     Args:
         search_str: The original string that was searched
@@ -137,7 +171,7 @@ def xpath_replace_property(search_str, match_str, property, xpath, quote):
 
     global xpath_skip_count
 
-    print("Private property: {0} - {1}".format(property, xpath))
+    verbose("Private property: {0} - {1}".format(property, xpath))
 
     # Used in file using concatenation
     regex = re.compile("['|\"] . \$this->{0} . ['|\"]".format(property))
@@ -207,7 +241,7 @@ def xpath_to_css(xpath, quote):
 
     try:
         css = cssify.cssify(xpath)
-        print("'{0}' converted to '{1}".format(xpath, css))
+        verbose("'{0}' converted to '{1}".format(xpath, css))
 
         css = css.replace(quote, "\\{0}".format(quote)) # escape quote
         global replace_count
@@ -216,50 +250,26 @@ def xpath_to_css(xpath, quote):
         return "css={0}".format(css)
 
     except cssify.XpathException:
-        print("Unable to convert xpath '{0}' to css expression".format(xpath))
+        verbose("Unable to convert xpath '{0}' to css expression".format(xpath))
         global xpath_skip_count
         xpath_skip_count += 1
         return xpath
 
-    
-
-# Replace xpath with css, use in replace() as an argument to re.sub()
-def xpath_replace(m, delimiter):
-    
-    s = m.group(0) # Original string
-    method = m.group(1) # Method part of match
-    xpath = m.group(2) # xpath part of match
-
-    # If method is getXpathCount(), return xpath
-    if method == 'getXpathCount':
-        return s
-
-    # Attempt to convert, if successful, return string w/ xpath replaced by css, otherwise return original
-    try:
-        css = cssify.cssify(xpath)
-        print("'{0}' converted to '{1}".format(xpath, css))
-
-        css = css.replace(delimiter, "\\{0}".format(delimiter)) # escape delimiter
-        global replace_count
-        replace_count = replace_count + 1
-
-        return s.replace(xpath, "css={0}".format(css))
-    except cssify.XpathException:
-        print("Unable to convert xpath '{0}' to css expression".format(xpath))
-        global xpath_skip_count
-        xpath_skip_count = xpath_skip_count + 1
-        return s
-
-# Restore backup files
 def restore(path):        
+    """Restore backup files that were created during processing
 
-    # Move backup files
-    print("*** {0} ***".format(path))
+    Restores backup files that were creating during replacement of xpath with css,
+    if they exist.  Looks for any .php.bak files and restores them.
+
+    Args:
+        path: file or directory path
+    """
+    verbose("*** {0} ***".format(path))
 
     # If this is a directory, look for files/directories w/i it
     if os.path.isdir(path):
 
-        print("  processing directory")
+        verbose("  processing directory")
         for path, dirs, files in os.walk(os.path.abspath(path)):
             for filename in files:
                 filepath = os.path.join(path, filename)
@@ -271,28 +281,47 @@ def restore(path):
 
     # Reject non-PHP files
     if filepath[-8:] != '.php.bak':
-        print("  skipping '{0}' - not .bak.php file".format(filepath))
+        verbose("  skipping '{0}' - not .bak.php file".format(filepath))
         return
 
     shutil.move(filepath, filepath[:-4])
 
+def verbose(str):
+    """Output verbose info
 
+    Prints string if verbose output is enabled
+
+    Args:
+        str: string to output
+    """
+    if show_verbose:
+        print(str)
 
 if __name__ == "__main__":
 
     usage = "usage: %prog [options] filepath"
     parser = OptionParser(usage)
+
     parser.add_option("-r", "--restore",
-                      action="store_true", dest="restore", default=False,
-                      help="restore backup files")
+        action="store_true", dest="restore", default=False,
+        help="restore backup files")
     parser.add_option("-c", "--count",
-                      action="store_true", dest="count", default=False,
-                      help="print total count of xpaths")
-    #parse.add_option("-n", "--no-backup"
-    #    action="store_true", dest="no_backup", default=False,
-    #    help="do not backup files)
+        action="store_true", dest="count", default=False,
+        help="print total count of xpaths")
+    parser.add_option("-v", "--verbose",
+        action="store_true", dest="verbose", default=False,
+        help="show verbose output")
+    parser.add_option("-t", "--run-tests",
+        action="store_true", dest="run_tests", default=False,
+        help="run tests")
+    parser.add_option("-n", "--no-backup",
+        action="store_true", dest="no_backup", default=False,
+        help="do not backup files")
 
     (options, args) = parser.parse_args()
+
+    show_verbose = options.verbose
+    no_backup = options.no_backup
 
     if len(args) != 1:
         parser.error("filepath is required")
